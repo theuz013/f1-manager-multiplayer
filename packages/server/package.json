@@ -6,7 +6,7 @@
   "main": "dist/index.js",
   "scripts": {
     "dev": "tsx watch src/index.ts",
-    "build": "npm --prefix ../.. run build:core && tsc",
+    "build": "npm --prefix ../.. run build:core && npx prisma generate && tsc",
     "start": "prisma db push && node dist/index.js",
     "db:push": "prisma db push",
     "db:generate": "prisma generate"
