@@ -1,6 +1,6 @@
 datasource db {
   provider = "sqlite"
-  url      = "file:./dev.db"
+  url      = env("DATABASE_URL")
 }
 
 generator client {
@@ -11,13 +11,29 @@ model User {
   id        String   @id @default(uuid())
   username  String   @unique
   name      String
+  passwordHash String?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  roomPlayers RoomPlayer[]
-  careers     Career[]
+  sessions      Session[]
+  roomPlayers   RoomPlayer[]
+  careers       Career[]
+  managedTeams  LeagueTeam[]
+  leagueMemberships LeagueMember[]
+  createdLeagues League[]   @relation("LeagueAdmin")
 }
 
+model Session {
+  token     String   @id
+  userId    String
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+// ==========================================
+// MODO MANAGER (CARREIRA SOLO)
+// ==========================================
 model Career {
   id          String   @id @default(uuid())
   userId      String
@@ -26,22 +42,25 @@ model Career {
   season      Int      @default(1)
   gpIndex     Int      @default(0)
   teamId      String
-  saveData    String   // JSON com snapshot completo do estado
+  saveData    String   // JSON com snapshot completo do estado do jogo
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
+// ==========================================
+// MODO MULTIPLAYER (LOBBY SIMPLES / LEGADO)
+// ==========================================
 model Room {
   id          String   @id @default(uuid())
-  code        String   @unique // Código de entrada amigável (ex: "INTERLAGOS")
+  code        String   @unique
   name        String
   season      Int      @default(1)
   gpIndex     Int      @default(0)
-  status      String   @default("LOBBY") // LOBBY, PRACTICE, QUALI, STRATEGY, RACE, SEASON_END
-  maxPlayers  Int      @default(11) // Até 11 equipes humanas
-  saveData    String   // JSON com estado global da temporada/grid
+  status      String   @default("LOBBY")
+  maxPlayers  Int      @default(11)
+  saveData    String
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
@@ -52,7 +71,7 @@ model RoomPlayer {
   id        String   @id @default(uuid())
   roomId    String
   userId    String
-  teamId    String   // bot0..bot10 (ID da equipe escolhida)
+  teamId    String
   isReady   Boolean  @default(false)
   joinedAt  DateTime @default(now())
 
@@ -61,4 +80,346 @@ model RoomPlayer {
 
   @@unique([roomId, teamId])
   @@unique([roomId, userId])
+}
+
+// ==========================================
+// ESPECIFICAÇÃO MULTIPLAYER 1.0 (LIGAS PRIVADAS)
+// ==========================================
+
+model League {
+  id          String   @id @default(uuid())
+  code        String   @unique // Código de convite (ex: "INTERL")
+  name        String
+  adminId     String
+  status      String   @default("SETUP") // SETUP, TEAM_DRAFT, PILOT_DRAFT, SEASON, ENDED
+  season      Int      @default(1)
+  gpIndex     Int      @default(0)       // 0 a 11 (12 Grandes Prêmios)
+  nextRaceAt  DateTime?                  // Horário oficial da largada da próxima corrida
+  lockedAt    DateTime?                  // 1h antes da corrida: travamento das estratégias
+  isLocked    Boolean  @default(false)
+  qualiSession Int     @default(0)       // Sessões de classificação já encerradas no GP atual (0 a 3)
+  gridJson    String?                    // Grid do GP atual, montado ao fim do Q3
+  calendar    String?                    // JSON com os 12 GPs programados e fusos
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  admin       User               @relation("LeagueAdmin", fields: [adminId], references: [id])
+  teams       LeagueTeam[]
+  members     LeagueMember[]
+  draftPool   DraftPoolDriver[]
+  draftPicks  DraftPick[]
+  raceResults LeagueRaceResult[]
+  transfers   TransferOffer[]
+  laps        WeekendLap[]
+  marketEvents MarketEvent[]
+  negotiations MarketNegotiation[]
+  hallOfFame  HallOfFame[]
+  paddock     PaddockPost[]
+  sponsors    Sponsor[]
+  staffPool   StaffMember[]
+}
+
+// Campeões de cada temporada da liga
+model HallOfFame {
+  id                  String   @id @default(uuid())
+  leagueId            String
+  season              Int
+  driverName          String
+  driverTeamId        String
+  driverPoints        Int
+  driverWins          Int
+  constructorTeamId   String
+  constructorManager  String
+  constructorPoints   Int
+  standingsJson       String?  // Classificação final completa (pilotos e construtores) da temporada
+  createdAt           DateTime @default(now())
+
+  league League @relation(fields: [leagueId], references: [id], onDelete: Cascade)
+
+  @@unique([leagueId, season])
+}
+
+// Histórico auditável do mercado (contratações, transferências, rescisões)
+model MarketEvent {
+  id        String   @id @default(uuid())
+  leagueId  String
+  season    Int
+  gpIndex   Int
+  kind      String   // livre, transferencia, rescisao, proposta
+  text      String
+  createdAt DateTime @default(now())
+
+  league League @relation(fields: [leagueId], references: [id], onDelete: Cascade)
+
+  @@index([leagueId, createdAt])
+}
+
+// Paciência do piloto livre com cada equipe (3 tentativas por janela)
+model MarketNegotiation {
+  id           String  @id @default(uuid())
+  leagueId     String
+  leagueTeamId String
+  driverId     String
+  season       Int
+  gpIndex      Int
+  attempts     Int     @default(0)
+  closed       Boolean @default(false)
+
+  league League @relation(fields: [leagueId], references: [id], onDelete: Cascade)
+
+  @@unique([leagueTeamId, driverId, season, gpIndex])
+}
+
+model WeekendLap {
+  id           String   @id @default(uuid())
+  leagueId     String
+  season       Int
+  gpIndex      Int
+  leagueTeamId String
+  driverId     String
+  session      Int      // 0 = treino livre, 1 a 3 = Q1, Q2, Q3
+  setupJson    String
+  time         Float
+  deleted      Boolean  @default(false)
+  fit          Int
+  feedbackJson String
+  hintsJson    String
+  auto         Boolean  @default(false) // Volta feita pela equipe sozinha (IA ou ausência do gerente)
+  createdAt    DateTime @default(now())
+
+  league League @relation(fields: [leagueId], references: [id], onDelete: Cascade)
+
+  @@index([leagueId, season, gpIndex])
+}
+
+model LeagueMember {
+  id             String   @id @default(uuid())
+  leagueId       String
+  userId         String
+  teamDraftOrder Int?     // Posição sorteada no Draft de Equipes (1 = escolhe primeiro)
+  joinedAt       DateTime @default(now())
+
+  league League @relation(fields: [leagueId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([leagueId, userId])
+}
+
+model LeagueTeam {
+  id          String   @id @default(uuid())
+  leagueId    String
+  teamId      String   // ID canônico da equipe (bot0..bot10)
+  userId      String?  // Nulo se for equipe controlada por IA
+  isAI        Boolean  @default(false)
+  budget      Float    @default(40.0) // Orçamento único e compartilhado inicial (R$ 40 mi)
+  reputation  Int      @default(60)   // Reputação inicial equalizada
+  carLevels   String?  // JSON com os níveis das 7 peças (padrão: nível 5)
+  carWear     String?  // JSON com os desgastes das peças
+  facilities  String?  // JSON com as instalações (nível 2 padrão)
+  rndJson     String?  // P&D: níveis projetados e projetos em andamento
+  setup       String?  // JSON com acerto mecânico para a corrida
+  tacticPace  String   @default("equilibrado") // atacar, equilibrado, conservar
+  strategy    String?  // JSON com estratégia de pneus e voltas de pit stop
+  points      Int      @default(0)    // Pontuação no Campeonato de Construtores
+  draftOrder  Int?     // Posição sorteada no Draft (1 a 11)
+
+  league      League           @relation(fields: [leagueId], references: [id], onDelete: Cascade)
+  user        User?            @relation(fields: [userId], references: [id], onDelete: SetNull)
+  drivers     DriverContract[]
+  ledger      LedgerEntry[]
+  transfersFrom TransferOffer[] @relation("TransferFrom")
+  transfersTo   TransferOffer[] @relation("TransferTo")
+  draftPicks    DraftPick[]
+
+  @@unique([leagueId, teamId])
+}
+
+model LedgerEntry {
+  id           String   @id @default(uuid())
+  leagueTeamId String
+  season       Int
+  gpIndex      Int
+  kind         String   // contratacao, salario, premio, troca, fabricacao
+  amount       Float    // Positivo = receita, negativo = despesa
+  label        String
+  createdAt    DateTime @default(now())
+
+  team LeagueTeam @relation(fields: [leagueTeamId], references: [id], onDelete: Cascade)
+
+  @@index([leagueTeamId])
+}
+
+model DraftPoolDriver {
+  id             String  @id @default(uuid())
+  leagueId       String
+  driverId       String  // ID canônico do piloto (ex: "p1-1", "p2-5")
+  name           String
+  pot            Int     // 1: Elite (11 pilotos), 2: Desenvolvimento (14 pilotos)
+  age            Int
+  ger            Int
+  talento        Int
+  classificacao  Int
+  gestaoPneus    Int
+  concentracao   Int
+  experiencia    Int
+  condicionamento Int
+  agressividade  Int
+  potencial      Int
+  personalidade  String  // ambicioso, perfeccionista, calmo, explosivo, leal
+  signingFee     Float   // Taxa de contratação fixa (R$ 5 mi no Pote 1, R$ 2 mi no Pote 2)
+  salario        Float   // Salário individual por GP (R$ mi)
+  isDrafted      Boolean @default(false)
+  draftedByTeamId String?
+
+  league         League  @relation(fields: [leagueId], references: [id], onDelete: Cascade)
+}
+
+model DraftPick {
+  id           String    @id @default(uuid())
+  leagueId     String
+  leagueTeamId String
+  round        Int       // 1 ou 2 (Snake Draft)
+  pickNumber   Int       // 1 a 22
+  pot          Int       // 1 ou 2
+  driverId     String?   // ID do piloto escolhido
+  deadline     DateTime  // Prazo de 30 minutos para escolha
+  pickedAt     DateTime?
+  autoPicked   Boolean   @default(false)
+
+  league       League     @relation(fields: [leagueId], references: [id], onDelete: Cascade)
+  leagueTeam   LeagueTeam @relation(fields: [leagueTeamId], references: [id], onDelete: Cascade)
+
+  @@unique([leagueId, pickNumber])
+}
+
+model DriverContract {
+  id             String   @id @default(uuid())
+  leagueTeamId   String
+  driverId       String
+  name           String
+  age            Int
+  ger            Int
+  talento        Int
+  classificacao  Int
+  gestaoPneus    Int
+  concentracao   Int
+  experiencia    Int
+  condicionamento Int
+  agressividade  Int
+  potencial      Int
+  personalidade  String
+  salario        Float    // Salário por GP
+  contractEnds   Int      @default(1) // Temporada de término
+  role           String   @default("titular1") // titular1, titular2, reserva
+  points         Int      @default(0) // Pontos no Campeonato de Pilotos
+  wins           Int      @default(0)
+  podiums        Int      @default(0)
+  poles          Int      @default(0)
+  fastestLaps    Int      @default(0)
+  joinedAt       DateTime @default(now())
+
+  team           LeagueTeam @relation(fields: [leagueTeamId], references: [id], onDelete: Cascade)
+  transfers      TransferOffer[]
+}
+
+model TransferOffer {
+  id               String   @id @default(uuid())
+  leagueId         String
+  driverContractId String
+  fromTeamId       String   // Equipe compradora
+  toTeamId         String   // Equipe vendedora (atual dona)
+  transferFee      Float    // Valor da multa / transferência oferecido
+  offeredSalary    Float    // Salário oferecido ao piloto
+  status           String   @default("PENDING") // PENDING, ACCEPTED_BY_TEAM, REJECTED, COUNTER_OFFER, COMPLETED, CANCELLED, EXPIRED
+  counterFee       Float?
+  expiresAt        DateTime // Prazo limite (24 horas)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  league           League         @relation(fields: [leagueId], references: [id], onDelete: Cascade)
+  driverContract   DriverContract @relation(fields: [driverContractId], references: [id], onDelete: Cascade)
+  fromTeam         LeagueTeam     @relation("TransferFrom", fields: [fromTeamId], references: [id], onDelete: Cascade)
+  toTeam           LeagueTeam     @relation("TransferTo", fields: [toTeamId], references: [id], onDelete: Cascade)
+}
+
+model LeagueRaceResult {
+  id                 String   @id @default(uuid())
+  leagueId           String
+  season             Int
+  gpIndex            Int
+  circuitId          String
+  simulatedAt        DateTime @default(now())
+  poleDriverId       String
+  winnerDriverId     String
+  fastestLapDriverId String
+  fastestLapTime     Float
+  safetyCarCount     Int      @default(0)
+  resultsJson        String   // JSON completo com tempos, voltas e gaps de cada piloto
+  eventsJson         String   // JSON com rádio e acontecimentos da corrida
+  carAvgJson         String?  // Nível médio do carro de cada equipe após o GP (gráfico de evolução)
+
+  league             League   @relation(fields: [leagueId], references: [id], onDelete: Cascade)
+
+  @@unique([leagueId, season, gpIndex])
+}
+
+// Mural do paddock: notícias automáticas, rumores, entrevistas, respostas, mensagens e comunicados
+model PaddockPost {
+  id           String   @id @default(uuid())
+  leagueId     String
+  season       Int
+  gpIndex      Int
+  kind         String   // corrida, quali, mercado, pd, rumor, entrevista, resposta, mensagem, admin, temporada, evento
+  text         String
+  authorUserId String?
+  leagueTeamId String?  // equipe que fala ou que é o assunto
+  targetTeamId String?  // equipe criticada na entrevista
+  replyToId    String?
+  createdAt    DateTime @default(now())
+
+  league League @relation(fields: [leagueId], references: [id], onDelete: Cascade)
+
+  @@index([leagueId, createdAt])
+}
+
+// Patrocínios: ofertas da janela atual e contratos ativos de cada equipe
+model Sponsor {
+  id           String   @id @default(uuid())
+  leagueId     String
+  leagueTeamId String
+  season       Int
+  offerGp      Int      // GP em que a oferta foi feita (ofertas valem só nessa janela)
+  name         String
+  size         String   // global, nacional, local
+  kind         String   // master, secundario, ocasiao
+  target       String
+  perGp        Float
+  bonus        Float
+  gpsLeft      Int
+  goal         Int?
+  seasonBonus  Float    @default(0)
+  status       String   @default("oferta") // oferta, ativo, encerrado
+  createdAt    DateTime @default(now())
+
+  league League @relation(fields: [leagueId], references: [id], onDelete: Cascade)
+
+  @@index([leagueTeamId, status])
+}
+
+// Funcionários: equipe técnica de cada time (leagueTeamId) ou disponíveis no mercado da liga (leagueTeamId nulo)
+model StaffMember {
+  id           String   @id @default(uuid())
+  leagueId     String
+  leagueTeamId String?
+  season       Int
+  role         String   // diretorTecnico, chefeAero, engenheiroCorrida, chefeBox
+  name         String
+  skill        Int
+  personality  String
+  salary       Float
+  createdAt    DateTime @default(now())
+
+  league League @relation(fields: [leagueId], references: [id], onDelete: Cascade)
+
+  @@index([leagueId, leagueTeamId])
 }

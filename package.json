@@ -10,7 +10,9 @@
     "dev:server": "npm run dev --workspace=@f1m/server",
     "dev:client": "npm run dev --workspace=@f1m/client",
     "build:core": "npm run build --workspace=@f1m/core",
-    "build": "npm run build --workspaces"
+    "build": "npm run build --workspace=@f1m/core && npm run build --workspace=@f1m/client && npm run build --workspace=@f1m/server",
+    "start": "npm run start --workspace=@f1m/server",
+    "db:push": "npm run db:push --workspace=@f1m/server"
   },
   "keywords": [
     "f1",
@@ -21,6 +23,12 @@
     "vite"
   ],
   "author": "theuz013",
-  "license": "MIT"
+  "license": "MIT",
+  "allowScripts": {
+    "@prisma/client@6.19.3": true,
+    "@prisma/engines@6.19.3": true,
+    "esbuild@0.28.2": true,
+    "esbuild@0.25.12": true,
+    "prisma@6.19.3": true
+  }
 }
-
