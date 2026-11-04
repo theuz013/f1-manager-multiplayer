@@ -1,12 +1,11 @@
 {
   "$schema": "https://railway.app/railway.schema.json",
   "build": {
-    "builder": "NIXPACKS",
-    "buildCommand": "npm install --include=dev && npm run build"
+    "buildCommand": "npm run build --workspace=@f1m/core && npm run build --workspace=@f1m/server"
   },
   "deploy": {
-    "startCommand": "npm run start",
-    "healthcheckPath": "/api/health",
-    "healthcheckTimeout": 30
+    "startCommand": "npm run start --workspace=@f1m/server",
+    "healthcheckPath": "/health",
+    "healthcheckTimeout": 60
   }
 }
