@@ -1,0 +1,26 @@
+{
+  "name": "f1-manager-multiplayer",
+  "version": "1.4.4",
+  "private": true,
+  "description": "F1 Manager Multiplayer - Gestão de equipe de Fórmula 1 com backend e persistência em banco",
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "dev:server": "npm run dev --workspace=@f1m/server",
+    "dev:client": "npm run dev --workspace=@f1m/client",
+    "build:core": "npm run build --workspace=@f1m/core",
+    "build": "npm run build --workspaces"
+  },
+  "keywords": [
+    "f1",
+    "manager",
+    "multiplayer",
+    "fastify",
+    "react",
+    "vite"
+  ],
+  "author": "theuz013",
+  "license": "MIT"
+}
+
