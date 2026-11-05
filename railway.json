@@ -1,7 +1,7 @@
 {
   "$schema": "https://railway.app/railway.schema.json",
   "build": {
-    "buildCommand": "npm run build --workspace=@f1m/core && npm run build --workspace=@f1m/server"
+    "buildCommand": "npm install --include=dev && npm run build"
   },
   "deploy": {
     "startCommand": "npm run start --workspace=@f1m/server",
