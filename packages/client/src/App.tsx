@@ -668,7 +668,7 @@ export default function App() {
                     </table>
                   </div>
                 )}
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px' }}>
+                <div className="grid two" style={{ gap: '24px' }}>
                   {/* Card Criar Liga */}
                   <div className="card" style={{ display: 'grid', gap: '14px' }}>
                     <h2>🏆 Criar Liga Privada F1</h2>
